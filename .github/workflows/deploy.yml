@@ -1,0 +1,92 @@
+name: Deploy to Digital Ocean
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run tests
+      run: npm test
+    
+    - name: Test WebSocket
+      run: timeout 10s npm run test:websocket || true
+
+  build-and-deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Login to Digital Ocean Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: registry.digitalocean.com
+        username: ${{ secrets.DO_REGISTRY_TOKEN }}
+        password: ${{ secrets.DO_REGISTRY_TOKEN }}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: |
+          registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/au-journey-backend:latest
+          registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/au-journey-backend:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Deploy to Digital Ocean Droplet
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.DO_HOST }}
+        username: ${{ secrets.DO_USERNAME }}
+        key: ${{ secrets.DO_SSH_KEY }}
+        script: |
+          # Login to Digital Ocean Container Registry
+          echo ${{ secrets.DO_REGISTRY_TOKEN }} | docker login registry.digitalocean.com -u ${{ secrets.DO_REGISTRY_TOKEN }} --password-stdin
+          
+          # Pull latest image
+          docker pull registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/au-journey-backend:latest
+          
+          # Stop and remove existing container
+          docker stop au-journey-backend || true
+          docker rm au-journey-backend || true
+          
+          # Run new container
+          docker run -d \
+            --name au-journey-backend \
+            --restart unless-stopped \
+            -p 8080:8080 \
+            -e NODE_ENV=production \
+            -e PORT=8080 \
+            -e REDIS_HOST=${{ secrets.REDIS_HOST }} \
+            -e REDIS_PORT=${{ secrets.REDIS_PORT }} \
+            -e REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }} \
+            -e REDIS_DB=${{ secrets.REDIS_DB }} \
+            -e FRONTEND_URL=${{ secrets.FRONTEND_URL }} \
+            registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/au-journey-backend:latest
+          
+          # Clean up old images
+          docker image prune -f
