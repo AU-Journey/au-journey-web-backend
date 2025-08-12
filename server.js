@@ -137,6 +137,13 @@ try {
     isRedisConnected = false;
   });
 
+  // Since lazyConnect is true, we need to manually trigger the connection
+  console.log('🔗 Triggering Redis connection...');
+  redis.connect().catch(err => {
+    console.error('❌ Failed to connect to Redis:', err.message);
+    isRedisConnected = false;
+  });
+
 } catch (error) {
   console.error('❌ Failed to create Redis client:', error.message);
   console.log('⚠️ Server will continue without Redis (health check will show redis: disconnected)');
