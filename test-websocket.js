@@ -15,17 +15,34 @@ socket.on('connect', () => {
   // Test ping
   socket.emit('ping');
   
-  // Request GPS data
+  // Request GPS data (legacy)
   setTimeout(() => {
-    console.log('📍 Requesting GPS data...');
+    console.log('📍 Requesting legacy GPS data...');
     socket.emit('request-gps-data');
   }, 1000);
+
+  // Request tram data
+  setTimeout(() => {
+    console.log('🚋 Requesting tram_1 data...');
+    socket.emit('request-tram-data', 'tram_1');
+  }, 2000);
+
+  setTimeout(() => {
+    console.log('🚋 Requesting tram_2 data...');
+    socket.emit('request-tram-data', 'tram_2');
+  }, 3000);
+
+  // Request all trams data
+  setTimeout(() => {
+    console.log('🚋 Requesting all trams data...');
+    socket.emit('request-all-trams');
+  }, 4000);
   
-  // Disconnect after 5 seconds
+  // Disconnect after 8 seconds to allow for all tests
   setTimeout(() => {
     console.log('👋 Disconnecting...');
     socket.disconnect();
-  }, 5000);
+  }, 8000);
 });
 
 socket.on('welcome', (data) => {
@@ -46,6 +63,27 @@ socket.on('gps-data-update', (data) => {
 
 socket.on('gps-error', (error) => {
   console.log('❌ GPS error:', error);
+});
+
+// New tram-specific event handlers
+socket.on('tram-data', (data) => {
+  console.log('🚋 Tram data received:', data);
+});
+
+socket.on('tram-data-update', (data) => {
+  console.log('📡 Tram data broadcast received:', data);
+});
+
+socket.on('tram-error', (error) => {
+  console.log('❌ Tram error:', error);
+});
+
+socket.on('all-trams-data', (data) => {
+  console.log('🚋 All trams data received:', data);
+});
+
+socket.on('trams-error', (error) => {
+  console.log('❌ Trams error:', error);
 });
 
 socket.on('disconnect', (reason) => {

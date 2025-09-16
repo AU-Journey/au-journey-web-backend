@@ -54,41 +54,51 @@ console.log('📍 Redis Config:', {
   db: redisConfig.db
 });
 
-// Broadcast GPS data to all connected WebSocket clients
+// Broadcast GPS data to all connected WebSocket clients (legacy support)
 function broadcastGPSData(gpsData) {
   io.emit('gps-data-update', gpsData);
   console.log('📡 Broadcasted GPS data to', io.engine.clientsCount, 'connected clients');
 }
 
-// Monitor Redis for GPS data changes using polling
-let lastGPSData = null;
+// Broadcast tram-specific data to all connected WebSocket clients
+function broadcastTramData(tramId, tramData) {
+  io.emit('tram-data-update', { tramId, data: tramData });
+  console.log(`📡 Broadcasted ${tramId} data to`, io.engine.clientsCount, 'connected clients');
+}
+
+// Monitor Redis for multiple tram GPS data changes using polling
+let lastTramData = { tram_1: null, tram_2: null };
 let gpsMonitoringInterval = null;
+const TRAM_IDS = ['tram_1', 'tram_2'];
 
 function startRedisGPSMonitoring() {
   if (!redis || !isRedisConnected) {
     console.log('⚠️ Cannot start Redis GPS monitoring - Redis not connected');
     return;
   }
-  
-  console.log('🔍 Starting Redis GPS monitoring...');
-  
+
+  console.log('🔍 Starting Redis GPS monitoring for multiple trams...');
+
   // Poll Redis every 2 seconds for GPS data changes
   gpsMonitoringInterval = setInterval(async () => {
     if (!redis || !isRedisConnected) {
       console.log('⚠️ Redis disconnected, skipping GPS monitoring check');
       return;
     }
-    
+
     try {
-      const result = await redis.get('gps_data');
-      if (result) {
-        const currentGPSData = JSON.parse(result);
-        
-        // Check if GPS data has changed
-        if (!lastGPSData || JSON.stringify(currentGPSData) !== JSON.stringify(lastGPSData)) {
-          console.log('📍 GPS data changed in Redis, broadcasting to clients...');
-          broadcastGPSData(currentGPSData);
-          lastGPSData = currentGPSData;
+      // Check each tram for updates
+      for (const tramId of TRAM_IDS) {
+        const result = await redis.get(tramId);
+        if (result) {
+          const currentTramData = JSON.parse(result);
+
+          // Check if this tram's data has changed
+          if (!lastTramData[tramId] || JSON.stringify(currentTramData) !== JSON.stringify(lastTramData[tramId])) {
+            console.log(`📍 ${tramId} data changed in Redis, broadcasting to clients...`);
+            broadcastTramData(tramId, currentTramData);
+            lastTramData[tramId] = currentTramData;
+          }
         }
       }
     } catch (error) {
@@ -196,37 +206,108 @@ io.on('connection', (socket) => {
     console.log('🔌 Client disconnected:', socket.id, 'Reason:', reason);
   });
   
-  // Handle GPS data requests
+  // Handle GPS data requests (legacy support)
   socket.on('request-gps-data', async () => {
     if (!redis || !isRedisConnected) {
-      socket.emit('gps-error', { 
+      socket.emit('gps-error', {
         error: 'Redis not available',
         message: 'Redis connection is not established'
       });
       return;
     }
-    
+
     try {
       const result = await redis.get('gps_data');
       if (result) {
         const gpsData = JSON.parse(result);
         socket.emit('gps-data', gpsData);
       } else {
-        socket.emit('gps-error', { 
+        socket.emit('gps-error', {
           error: 'No GPS data found',
           message: 'gps_data key not found in Redis'
         });
       }
     } catch (error) {
       console.error('❌ Error fetching GPS data for WebSocket:', error);
-      socket.emit('gps-error', { 
+      socket.emit('gps-error', {
         error: 'Failed to fetch GPS data',
-        message: error.message 
+        message: error.message
+      });
+    }
+  });
+
+  // Handle tram-specific data requests
+  socket.on('request-tram-data', async (tramId) => {
+    if (!redis || !isRedisConnected) {
+      socket.emit('tram-error', {
+        tramId,
+        error: 'Redis not available',
+        message: 'Redis connection is not established'
+      });
+      return;
+    }
+
+    if (!TRAM_IDS.includes(tramId)) {
+      socket.emit('tram-error', {
+        tramId,
+        error: 'Invalid tram ID',
+        message: `Valid tram IDs: ${TRAM_IDS.join(', ')}`
+      });
+      return;
+    }
+
+    try {
+      const result = await redis.get(tramId);
+      if (result) {
+        const tramData = JSON.parse(result);
+        socket.emit('tram-data', { tramId, data: tramData });
+      } else {
+        socket.emit('tram-error', {
+          tramId,
+          error: 'No tram data found',
+          message: `${tramId} key not found in Redis`
+        });
+      }
+    } catch (error) {
+      console.error(`❌ Error fetching ${tramId} data for WebSocket:`, error);
+      socket.emit('tram-error', {
+        tramId,
+        error: 'Failed to fetch tram data',
+        message: error.message
+      });
+    }
+  });
+
+  // Handle request for all trams data
+  socket.on('request-all-trams', async () => {
+    if (!redis || !isRedisConnected) {
+      socket.emit('trams-error', {
+        error: 'Redis not available',
+        message: 'Redis connection is not established'
+      });
+      return;
+    }
+
+    try {
+      const allTramsData = {};
+      for (const tramId of TRAM_IDS) {
+        const result = await redis.get(tramId);
+        if (result) {
+          allTramsData[tramId] = JSON.parse(result);
+        }
+      }
+
+      socket.emit('all-trams-data', allTramsData);
+    } catch (error) {
+      console.error('❌ Error fetching all trams data for WebSocket:', error);
+      socket.emit('trams-error', {
+        error: 'Failed to fetch trams data',
+        message: error.message
       });
     }
   });
   
-  // Handle GPS data updates from external sources
+  // Handle GPS data updates from external sources (legacy support)
   socket.on('update-gps-data', async (gpsData) => {
     try {
       // Validate GPS data format
@@ -237,24 +318,69 @@ io.on('connection', (socket) => {
         });
         return;
       }
-      
+
       // Store in Redis
       await redis.set('gps_data', JSON.stringify(gpsData));
-      
+
       // Broadcast to all WebSocket clients
       broadcastGPSData(gpsData);
-      
+
       console.log('📍 GPS data updated via WebSocket:', gpsData);
-      socket.emit('gps-update-success', { 
-        success: true, 
+      socket.emit('gps-update-success', {
+        success: true,
         message: 'GPS data updated successfully',
         data: gpsData
       });
     } catch (error) {
       console.error('❌ Error updating GPS data via WebSocket:', error);
-      socket.emit('gps-error', { 
+      socket.emit('gps-error', {
         error: 'Failed to update GPS data',
-        message: error.message 
+        message: error.message
+      });
+    }
+  });
+
+  // Handle tram-specific data updates
+  socket.on('update-tram-data', async ({ tramId, data }) => {
+    try {
+      if (!TRAM_IDS.includes(tramId)) {
+        socket.emit('tram-error', {
+          tramId,
+          error: 'Invalid tram ID',
+          message: `Valid tram IDs: ${TRAM_IDS.join(', ')}`
+        });
+        return;
+      }
+
+      // Validate tram data format
+      if (!data.c || !data.p) {
+        socket.emit('tram-error', {
+          tramId,
+          error: 'Invalid tram data format',
+          message: 'Expected format: {"c": {...}, "p": {...}, "s": "active"}'
+        });
+        return;
+      }
+
+      // Store in Redis
+      await redis.set(tramId, JSON.stringify(data));
+
+      // Broadcast to all WebSocket clients
+      broadcastTramData(tramId, data);
+
+      console.log(`📍 ${tramId} data updated via WebSocket:`, data);
+      socket.emit('tram-update-success', {
+        tramId,
+        success: true,
+        message: `${tramId} data updated successfully`,
+        data: data
+      });
+    } catch (error) {
+      console.error(`❌ Error updating ${tramId} data via WebSocket:`, error);
+      socket.emit('tram-error', {
+        tramId,
+        error: 'Failed to update tram data',
+        message: error.message
       });
     }
   });
