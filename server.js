@@ -36,10 +36,10 @@ app.use(express.static(path.join(__dirname, 'dist')));
 
 // Redis configuration - use environment variables in production
 const redisConfig = {
-  host: process.env.REDIS_HOST || 'redis-15238.crce178.ap-east-1-1.ec2.redns.redis-cloud.com',
-  port: parseInt(process.env.REDIS_PORT) || 15238,
-  password: process.env.REDIS_PASSWORD || 'HOwS9Ta53CidWxys59VlS51v2yp88tY9',
-  db: parseInt(process.env.REDIS_DB) || 0,
+  host: process.env.REDIS_HOST || '127.0.0.1',
+  port: Number(process.env.REDIS_PORT || 6379),
+  ...(process.env.REDIS_PASSWORD ? { password: process.env.REDIS_PASSWORD } : {}),
+  db: Number(process.env.REDIS_DB || 0),
   retryDelayOnFailover: 1000,
   maxRetriesPerRequest: 3,
   keepAlive: 30000,

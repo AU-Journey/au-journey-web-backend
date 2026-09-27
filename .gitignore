@@ -86,10 +86,6 @@ Thumbs.db
 dist/
 build/
 
-# Docker
-.dockerignore
-
 #Claude and Testing
 CLAUDE.md
 testTramTracker.py
-
