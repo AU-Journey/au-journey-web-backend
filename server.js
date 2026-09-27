@@ -63,7 +63,9 @@ function broadcastGPSData(gpsData) {
 // Broadcast tram-specific data to all connected WebSocket clients
 function broadcastTramData(tramId, tramData) {
   io.emit('tram-data-update', { tramId, data: tramData });
-  console.log(`📡 Broadcasted ${tramId} data to`, io.engine.clientsCount, 'connected clients');
+  if (process.env.DEBUG_GPS === 'true') {
+    console.log(`Broadcasted ${tramId} data to ${io.engine.clientsCount} clients`);
+  }
 }
 
 // Monitor Redis for multiple tram GPS data changes using polling
@@ -364,11 +366,14 @@ io.on('connection', (socket) => {
 
       // Store in Redis
       await redis.set(tramId, JSON.stringify(data));
+      lastTramData[tramId] = data;
 
       // Broadcast to all WebSocket clients
       broadcastTramData(tramId, data);
 
-      console.log(`📍 ${tramId} data updated via WebSocket:`, data);
+      if (process.env.DEBUG_GPS === 'true') {
+        console.log(`${tramId} data updated via WebSocket:`, data);
+      }
       socket.emit('tram-update-success', {
         tramId,
         success: true,

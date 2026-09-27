@@ -5,6 +5,6 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --no-audit --no-fund
 
-COPY mock-location.js mock-route.json ./
+COPY mock-location.js mock-routes.json ./
 
 CMD ["node", "mock-location.js"]
