@@ -2,8 +2,8 @@
 import http from 'http';
 
 const options = {
-  hostname: 'localhost',
-  port: process.env.PORT || 3000,
+  hostname: '127.0.0.1',
+  port: process.env.PORT || 8080,
   path: '/health',
   method: 'GET',
   timeout: 2000
@@ -17,7 +17,8 @@ const req = http.request(options, (res) => {
   }
 });
 
-req.on('error', () => {
+req.on('error', (error) => {
+  console.error(error.message);
   process.exit(1);
 });
 

@@ -36,10 +36,10 @@ app.use(express.static(path.join(__dirname, 'dist')));
 
 // Redis configuration - use environment variables in production
 const redisConfig = {
-  host: process.env.REDIS_HOST || 'redis-15238.crce178.ap-east-1-1.ec2.redns.redis-cloud.com',
-  port: parseInt(process.env.REDIS_PORT) || 15238,
-  password: process.env.REDIS_PASSWORD || 'HOwS9Ta53CidWxys59VlS51v2yp88tY9',
-  db: parseInt(process.env.REDIS_DB) || 0,
+  host: process.env.REDIS_HOST || '127.0.0.1',
+  port: Number(process.env.REDIS_PORT || 6379),
+  ...(process.env.REDIS_PASSWORD ? { password: process.env.REDIS_PASSWORD } : {}),
+  db: Number(process.env.REDIS_DB || 0),
   retryDelayOnFailover: 1000,
   maxRetriesPerRequest: 3,
   keepAlive: 30000,
@@ -63,7 +63,9 @@ function broadcastGPSData(gpsData) {
 // Broadcast tram-specific data to all connected WebSocket clients
 function broadcastTramData(tramId, tramData) {
   io.emit('tram-data-update', { tramId, data: tramData });
-  console.log(`📡 Broadcasted ${tramId} data to`, io.engine.clientsCount, 'connected clients');
+  if (process.env.DEBUG_GPS === 'true') {
+    console.log(`Broadcasted ${tramId} data to ${io.engine.clientsCount} clients`);
+  }
 }
 
 // Monitor Redis for multiple tram GPS data changes using polling
@@ -364,11 +366,14 @@ io.on('connection', (socket) => {
 
       // Store in Redis
       await redis.set(tramId, JSON.stringify(data));
+      lastTramData[tramId] = data;
 
       // Broadcast to all WebSocket clients
       broadcastTramData(tramId, data);
 
-      console.log(`📍 ${tramId} data updated via WebSocket:`, data);
+      if (process.env.DEBUG_GPS === 'true') {
+        console.log(`${tramId} data updated via WebSocket:`, data);
+      }
       socket.emit('tram-update-success', {
         tramId,
         success: true,
